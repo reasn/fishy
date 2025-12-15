@@ -6,7 +6,7 @@ Download https://github.com/AsamK/signal-cli and copy it into this folder
 
 Link
 ```sh
-./signal-cli-0.13.6/bin/signal-cli link -n bday14-reminder
+./signal-cli-0.13.6/bin/signal-cli link -n fishy
 ```
 
 Test

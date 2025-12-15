@@ -58,8 +58,7 @@ export default async function main() {
   }
   const authors = await fetchAuthors();
   logger.info(
-    `Fetched ${recipients.length} recipients ${CANARY ? "(CANARY)" : ""} and ${
-      messages.length
+    `Fetched ${recipients.length} recipients ${CANARY ? "(CANARY)" : ""} and ${messages.length
     } messages`
   );
 
@@ -67,15 +66,12 @@ export default async function main() {
   for (let i = 0; i < loops; i++) {
     for (const recipient of recipients) {
       // console.log(recipient)
+      //console.log(messages)
       const sendable = messages.find(
         (m) =>
           m.wave > recipient.lastWave &&
           (m.highPriority || recipient.highIntensity) &&
-          (m.condition !== "slots_unknown" ||
-            recipient.slots === "not_confirmed") &&
-          (m.condition !== "coming" ||
-            (recipient.slots !== "not_confirmed" && recipient.slots >= 1)) &&
-          (m.condition !== "not_coming" || recipient.slots === 0)
+          assertCondition(m, recipient)
       );
       if (!sendable) {
         logger.info(
@@ -83,15 +79,15 @@ export default async function main() {
         );
         continue;
       }
-      const content = wrapWithAuthor(
+      /*const content = wrapWithAuthor(
         await renderMessageContent(sendable, recipient, prompts, openAi),
         sendable,
         authors
-      );
+      );*/
+      const content = await renderMessageContent(sendable, recipient, prompts, openAi);
 
       logger.info(
-        `${hotSend ? "Sending" : "NOT sending"} message ${sendable.handle} to ${
-          recipient.name
+        `${hotSend ? "Sending" : "NOT sending"} message ${sendable.handle} to ${recipient.name
         } (${recipient.language}) via ${recipient.messenger}`
       );
       if (hotSend) {
@@ -99,8 +95,7 @@ export default async function main() {
       }
       if (hotUpdate) {
         logger.info(
-          `Updating ${recipient.rowIndex} (${
-            recipient.number
+          `Updating ${recipient.rowIndex} (${recipient.number
           }) to ${now.toISO()} with ${sendable.handle}`
         );
 
@@ -128,6 +123,35 @@ export default async function main() {
     }
   }
 }
+const assertCondition = (m: MessageRow, recipient: RecipientRow) => {
+  const conditions = m.condition?.split(',') || [];
+  for (const condition of conditions) {
+
+    if (condition === "slots_unknown" && recipient.slots !== "unknown") {
+      return false;
+    }
+    if (condition === "coming" && (recipient.slots === "unknown" || recipient.slots < 1)) {
+      return false;
+    }
+    if (condition === "not_coming" && (recipient.slots !== 0)) {
+      return false;
+    }
+    if (condition === 'new_to_fishy' && !recipient.tags.includes('new_to_fishy')) {
+      return false;
+    }
+    if (condition === 'knows_fishy' && recipient.tags.includes('new_to_fishy')) {
+      return false;
+    }
+    if(condition=== 'de' && recipient.language !== 'de') {
+      return false;
+    }
+    if(condition=== 'en' && recipient.language !== 'en') {
+      return false;
+    }
+  }
+
+  return true;
+};
 
 const send = async (recipient: RecipientRow, content: string) => {
   if (recipient.messenger === "sms") {
@@ -135,15 +159,19 @@ const send = async (recipient: RecipientRow, content: string) => {
     logger.info("Sent via SMS");
   } else {
     const { stdout, stderr } = await execPromise(
-      `${process.env.SIGNAL_CLI} send ${
-        recipient.number
+      `${process.env.SIGNAL_CLI} send ${recipient.number
       } -m "${content.replaceAll('"', "'")}"`
     );
     if (
       stderr &&
       stderr !==
-        `SLF4J(I): Connected with provider of type [ch.qos.logback.classic.spi.LogbackServiceProvider]
+      `SLF4J(I): Connected with provider of type [ch.qos.logback.classic.spi.LogbackServiceProvider]
 INFO  AccountHelper - The Signal protocol expects that incoming messages are regularly received.
+` &&
+      stderr !==
+      `SLF4J(I): Connected with provider of type [ch.qos.logback.classic.spi.LogbackServiceProvider]
+INFO  AccountHelper - The Signal protocol expects that incoming messages are regularly received.
+WARN  RefreshRecipientsJob - Full CDSI recipients refresh failed, ignoring: org.signal.libsignal.net.NetworkProtocolException: HTTP error: 404 Not Found (IOException)
 `
     ) {
       console.log(stderr);
@@ -181,9 +209,18 @@ const renderMessageContent = async (
     days: Math.round(timeLeft.as("days")).toLocaleString(),
     seconds: Math.round(timeLeft.as("seconds")).toLocaleString(),
     hours: Math.round(timeLeft.as("hours")).toLocaleString(),
+    tags: recipient.tags.join(','),
+    slots_recipient:
+      recipient.slots === "unknown"
+        ? "unknown"
+        : recipient.slots.toLocaleString(),
+    additional_slots_recipient:
+      recipient.slots === "unknown"
+        ? "unknown"
+        : Math.max(0, recipient.slots - 1).toLocaleString(),
     slots_left: `${variables.slots_left}`,
     slots_confirmed: `${variables.slots_confirmed}`,
-    slots_not_confirmed: `${variables.slots_not_confirmed}`,
+    slots_unknown: `${variables.slots_unknown}`,
   };
 
   let templated = message.content;

@@ -5,18 +5,19 @@ export type VariableSet = {
   system_prompt: string;
   slots_left: number;
   slots_confirmed: number;
-  slots_not_confirmed: number;
+  slots_unknown: number;
 };
 
 export type RecipientRow = {
   rowIndex: number;
   number: string;
-  slots: number | "not_confirmed";
+  slots: number | "unknown";
   name: string;
   active: boolean;
   lastWave: number;
   language: "en" | "de" | "fr" | "it" | "es";
   messenger: "sms" | "signal";
+  tags: string[];
   highIntensity: boolean;
 };
 
@@ -28,7 +29,7 @@ export type MessageRow = {
   sendAfter: DateTime;
   wave: number;
   highPriority: boolean;
-  condition: null | "slots_unknown" | "coming" | "not_coming";
+  condition: null | "slots_unknown" | "coming" | "not_coming" | "new_to_fishy" | "knows_fishy";
 };
 
 const logger = pino();
@@ -55,8 +56,8 @@ export const fetchCommonPrompts = async (): Promise<VariableSet> => {
     slots_confirmed: parseInt(
       response.find((r: any) => r.name === "slots_confirmed").content
     ),
-    slots_not_confirmed: parseInt(
-      response.find((r: any) => r.name === "slots_not_confirmed").content
+    slots_unknown: parseInt(
+      response.find((r: any) => r.name === "slots_unknown").content
     ),
   };
 };
@@ -75,19 +76,28 @@ export const fetchActiveRecipients = async (): Promise<RecipientRow[]> => {
 
   return response
     .map(
-      (r: any, rowIndex: number): RecipientRow => ({
-        rowIndex,
-        number: `+${r.number.replace(/[^\d]/g, "")}`,
-        slots:
-          r.slots === "not_confirmed" ? "not_confirmed" : parseInt(r.slots),
-        name: r.name,
-        active: r.number?.length > 0 && r.active === "TRUE",
-        lastWave: parseInt(r.lastWave),
-        language: r.language,
-        messenger: r.messenger,
-        highIntensity: r.intensity === "high",
+      (r: any, rowIndex: number): RecipientRow => {
+        const active = r.number?.length > 0 && r.active === "TRUE";
+        if (active && !r.name) {
+          logger.warn(`Recipient ${r.fullName} has no name`);
+        }
+        if (active && !r.number) {
+          logger.warn(`Recipient ${r.fullName} has no number`);
+        }
+        return ({
+          rowIndex,
+          number: `+${(r.number || '').replace(/[^\d]/g, "")}`,
+          slots:
+            r.slots === "unknown" ? "unknown" : parseInt(r.slots),
+          name: r.name,
+          active,
+          lastWave: parseInt(r.lastWave),
+          language: r.language,
+          messenger: r.messenger,
+          tags: (r.tags || '').split(','),
+          highIntensity: r.intensity === "high",
+        })
       })
-    )
     .filter((r: RecipientRow) => r.active);
 };
 export const fetchActiveMessages = async (): Promise<MessageRow[]> => {

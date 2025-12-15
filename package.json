@@ -6,7 +6,8 @@
   "license": "GPL-3.0-only",
   "private": true,
   "scripts": {
-    "start": "ts-node index.ts | pino-pretty"
+    "start": "ts-node index.ts | pino-pretty",
+    "receive": "./signal-cli-0.13.20/bin/signal-cli receive --max-messages 10000"
   },
   "dependencies": {
     "@inquirer/prompts": "^5.3.8",
